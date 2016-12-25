@@ -11,6 +11,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"io/ioutil"
 	"os"
 	"strings"
 
@@ -67,6 +68,34 @@ func main() {
 	saveHex(hex, outputFilePath)
 }
 
+func outputToImage() {
+	hexInput, err := os.Open("output.txt")
+	if err != nil {
+		panic(err)
+	}
+
+	b, err := ioutil.ReadAll(hexInput)
+	if err != nil {
+		panic(err)
+	}
+
+	hexArr := hexOutputToHexArr(string(b))
+	imgFromHex := hexToImage(300, 72, hexArr)
+
+	handle, err := os.Create("from-hex.png")
+	if err != nil {
+		panic(err)
+	}
+
+	err = png.Encode(handle, imgFromHex)
+	if err != nil {
+		panic(err)
+	}
+
+	return
+	//saveHex(hex, outputFilePath)
+}
+
 func getImage(path string) image.Image {
 	handle, err := os.Open(path)
 	if err != nil {
@@ -111,11 +140,10 @@ func toOutputFormat(input []string) string {
 }
 
 func toHex(img image.Image, withOpacity bool) []string {
-
 	var result []string
 	// x == width, y == height
-	for x := img.Bounds().Min.X; x < img.Bounds().Dx(); x++ {
-		for y := img.Bounds().Min.Y; y < img.Bounds().Dy(); y++ {
+	for y := img.Bounds().Min.Y; y < img.Bounds().Dy(); y++ {
+		for x := img.Bounds().Min.X; x < img.Bounds().Dx(); x++ {
 			var hexVal = colorToHexValue(img.At(x, y), withOpacity)
 			result = append(result, hexVal)
 		}
@@ -148,7 +176,7 @@ func resizeImage(width, height uint, img image.Image) image.Image {
 		}
 	}
 
-	//Interpolation Options (NearestNeighbor, Bilinear, Bicubic, MitchellNetravali, Lanczos2, Lanczos3)
+	// Interpolation Options (NearestNeighbor, Bilinear, Bicubic, MitchellNetravali, Lanczos2, Lanczos3)
 
 	img = resize.Resize(width, height, img, resize.Lanczos3)
 
@@ -164,4 +192,87 @@ func resizeImage(width, height uint, img image.Image) image.Image {
 	}
 
 	return img
+}
+
+func hexOutputToHexArr(output string) []string {
+	output = strings.Replace(output, ", }", "", -1)
+	output = strings.Replace(output, ";", "", -1)
+	output = strings.Replace(output, ";", "", -1)
+	output = strings.Replace(output, "//end of array", "", -1)
+	output = strings.Replace(output, "const unsigned int array1[] =", "", -1)
+	output = strings.Replace(output, "{", "", -1)
+	output = strings.Replace(output, "}", "", -1)
+	output = strings.Replace(output, " ", "", -1)
+	output = strings.Replace(output, "\t", "", -1)
+	output = strings.Replace(output, "\n", "", -1)
+	output = strings.Replace(output, "\v", "", -1)
+	output = strings.Replace(output, "\f", "", -1)
+	output = strings.Replace(output, "\r", "", -1)
+
+	return strings.Split(output, ",")
+}
+
+func hexToImage(width, height int, hexArr []string) image.Image {
+	var c [][]color.Color
+
+	for i := 0; i < width; i++ {
+		c = append(c, nil)
+		for j := 0; j < height; j++ {
+			c[i] = append(c[i], nil)
+		}
+	}
+
+	var idx int
+	for j := 0; j < height; j++ {
+		for i := 0; i < width; i++ {
+			c[i][j] = hexToColor(hexArr[idx])
+			idx++
+		}
+	}
+
+	return HexImage(c)
+}
+
+type HexImage [][]color.Color
+
+func (h HexImage) ColorModel() color.Model {
+	var f = func(c color.Color) color.Color {
+		r, g, b, a := c.RGBA()
+		result := color.RGBA{
+			R: uint8(r),
+			G: uint8(g),
+			B: uint8(b),
+			A: uint8(a),
+		}
+		fmt.Println("RESULT", result)
+		return result
+	}
+	return color.ModelFunc(f)
+}
+
+func (h HexImage) Bounds() image.Rectangle {
+	return image.Rectangle{
+		Min: image.Point{0, 0},
+		Max: image.Point{X: len(h), Y: len(h[0])},
+	}
+}
+
+func (h HexImage) At(x, y int) color.Color {
+	return h[x][y]
+}
+
+func hexToColor(hex string) color.Color {
+	var r, g, b uint8
+
+	_, err := fmt.Fscanf(strings.NewReader(hex), "0x%02x%02x%02x", &r, &g, &b)
+	if err != nil {
+		panic(err)
+	}
+
+	return color.RGBA{
+		R: uint8(r),
+		G: uint8(g),
+		B: uint8(b),
+		A: 255,
+	}
 }
